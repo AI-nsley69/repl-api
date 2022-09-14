@@ -7,9 +7,9 @@ async function main() {
     // Pre start data
     await espers.prepareDoc();
     console.log("Finished loading sheet");
-    await espers.indexEsper();
+    espers.indexEsper();
     console.log("Finished indexing espers");
-    await espers.preCache();
+    espers.preCache();
     console.log("Started pre-caching known espers");
     // Start express
     const PORT = 443;

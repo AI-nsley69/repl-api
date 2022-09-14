@@ -152,8 +152,8 @@ module.exports = {
         mui: 6,
     }
       const i = esperIndex[esperName]
-      if (!i) throw "Cannot find esper!"
       // Get the recommended relics
+      if (i) {
       Object.keys(esperInfo.relics).forEach(k => {
         esperInfo.relics[k] = sheet.getCell(i, colIndex[k]).value.replaceAll("\n", "/");
       })
@@ -162,6 +162,7 @@ module.exports = {
         const pos = colIndex.mui + index + 1;
         esperInfo.main_stats[k] = sheet.getCell(i, pos).value.replaceAll("\n", "/");
       })
+    }
     // Add the info to cache
     esperCache.set(search.results[0], esperInfo);
     return esperInfo;
