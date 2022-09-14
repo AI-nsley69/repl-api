@@ -6,11 +6,14 @@ var wiki = wikijs({
 });
 // Google Spreadsheet API
 const { GoogleSpreadsheet } = require('google-spreadsheet');
+let sheet;
 // Cache
 const NodeCache = require("node-cache");
 const esperCache = new NodeCache({
   stdTTL: 7 * 24 * 60 * 60 // Time to live: one week
 })
+
+const esperIndex = {};
 
 // Espers JSON
 const espers = JSON.parse(require("fs").readFileSync("./assets/espers.json"));
@@ -40,16 +43,27 @@ module.exports = {
 
     await doc.loadInfo();
 
-    const sheet = doc.sheetsByTitle['Esper Info'];
+    sheet = doc.sheetsByTitle['Esper Info'];
     await sheet.loadCells();
-    return sheet;
   },
-  async getData(esper, sheet) {
-    // Check if esper is in cache
-    if (esperCache.has(esper)) return esperCache.get(esper);
+  async indexEsper() {
+      const nameIndex = 2;
+      for (let i = 2; i < sheet.rowCount - 1; i++) {
+        const name = sheet.getCell(i, nameIndex).value;
+        esperIndex[name] = i;
+      }
+  },
+  async preCache() {
+    Object.keys(esperIndex).forEach(async k => {
+        await this.getData(k).catch(err => console.log(err.toString()));
+    })
+  },
+  async getData(esper) {
     // Else start processing it
     const search = await wiki.search(esper);
     if (search.results.length < 1) throw "Invalid esper!";
+    // Check if esper is in cache
+    if (esperCache.has(search.results[0])) return esperCache.get(search.results[0]);
     const esperPage = await wiki.page(search.results[0]);
     // Fetch object from esper name
     const esperName = search.results[0].split(" (")[0];
@@ -137,11 +151,8 @@ module.exports = {
         una: 5,
         mui: 6,
     }
-    
-    for (let i = 2; i < sheet.rowCount - 1; i++) {
-      const name = sheet.getCell(i, colIndex.name).value;
-      // If it's not the esper's name, continue searching
-      if (name !== esperName) continue;
+      const i = esperIndex[esperName]
+      if (!i) throw "Cannot find esper!"
       // Get the recommended relics
       Object.keys(esperInfo.relics).forEach(k => {
         esperInfo.relics[k] = sheet.getCell(i, colIndex[k]).value.replaceAll("\n", "/");
@@ -151,11 +162,8 @@ module.exports = {
         const pos = colIndex.mui + index + 1;
         esperInfo.main_stats[k] = sheet.getCell(i, pos).value.replaceAll("\n", "/");
       })
-      // Break so the entire sheet isn't searched unless needed
-      break;
-    }
     // Add the info to cache
-    esperCache.set(esper, esperInfo);
+    esperCache.set(search.results[0], esperInfo);
     return esperInfo;
   }
 }
