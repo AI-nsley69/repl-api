@@ -13,7 +13,7 @@ async function main() {
     console.log("Started pre-caching known espers");
     // Start express
     const PORT = 443;
-    app.listen(PORT, async () => {
+    app.listen(PORT,  () => {
         console.log(`Listening on port ${PORT}`);
     })
     

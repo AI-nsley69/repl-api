@@ -46,14 +46,14 @@ module.exports = {
     sheet = doc.sheetsByTitle['Esper Info'];
     await sheet.loadCells();
   },
-  async indexEsper() {
+   indexEsper() {
       const nameIndex = 2;
       for (let i = 2; i < sheet.rowCount - 1; i++) {
         const name = sheet.getCell(i, nameIndex).value;
         esperIndex[name] = i;
       }
   },
-  async preCache() {
+   preCache() {
     Object.keys(esperIndex).forEach(async k => {
         await this.getData(k).catch(err => console.log(err.toString()));
     })
