@@ -120,14 +120,14 @@ module.exports = {
         color: attributes.colors[attribute]
       },
       artwork: await esperPage.mainImage(),
-      icon: esperObj.icon,
+      icon: esperObj ? esperObj.icon : "https://cdn.pixabay.com/photo/2017/10/08/19/55/magnifying-glass-2831367_1280.png",
       url: esperPage.url(),
       age: age ? age : "Unknown",
       height: height ? height : "Unknown",
       affiliation:  affiliation,
       identity: identity ? identity : "Unknown",
       preference: preference ? preference : "Unknown",
-      stats: esperObj.stats ? esperObj.stats : unknownStats,
+      stats: esperObj ? esperObj.stats : unknownStats,
       skills: skills,
       relics: {
         una: "Unknown",
