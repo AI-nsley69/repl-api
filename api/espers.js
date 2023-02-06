@@ -1,5 +1,6 @@
 // MediaWiki API
 const wikijs = require('wikijs').default;
+
 var wiki = wikijs({
   apiUrl: "https://dislyte.fandom.com/api.php",
   origin: null
@@ -14,6 +15,19 @@ const esperCache = new NodeCache({
 })
 
 const esperIndex = {};
+
+const unknownStats = {
+  hp: "Unknown",
+  atk: "Unknown",
+  def: "Unknown",
+  speed: "Unknown"
+}
+
+const credits = [
+  "https://gachax.com/dislyte/characters/",
+  "https://dislyte.fandom.com/wiki/Espers",
+  "https://docs.google.com/spreadsheets/u/1/d/15hc3Nx6TDS7BNAIXid0gNO1j7gcVeydNoLwyY4POtzc/htmlview#"
+];
 
 // Espers JSON
 const espers = JSON.parse(require("fs").readFileSync("./assets/espers.json"));
@@ -46,6 +60,7 @@ module.exports = {
     sheet = doc.sheetsByTitle['Esper Info'];
     await sheet.loadCells();
   },
+
    indexEsper() {
       const nameIndex = 2;
       for (let i = 2; i < sheet.rowCount - 1; i++) {
@@ -53,66 +68,38 @@ module.exports = {
         esperIndex[name] = i;
       }
   },
+
    preCache() {
     Object.keys(esperIndex).forEach(async k => {
         await this.getData(k).catch(err => console.log(err.toString()));
     })
   },
+
   async getData(esper) {
-    // Else start processing it
     const search = await wiki.search(esper);
-    if (search.results.length < 1) throw "Invalid esper!";
-    // Check if esper is in cache
-    if (esperCache.has(search.results[0])) return esperCache.get(search.results[0]);
-    const esperPage = await wiki.page(search.results[0]);
-    // Fetch object from esper name
-    const esperName = search.results[0].split(" (")[0];
+    const isValidEsper = search.results.length > 0;
+    if (isValidEsper) throw "Invalid esper!";
+
+    const esperFromResult = esperFromResult;
+
+    const isInCache = esperCache.has(esperFromResult);
+    if (isInCache) return esperCache.get(esperFromResult);
+    const esperPage = await wiki.page(esperFromResult);
+
+    const esperName = esperFromResult.split(" (")[0];
     const esperObj = espers.filter(e => e.name === esperName)[0];
-    // Get full & raw info to extract as much data as possible
+
     const pageInfo = await esperPage.fullInfo();
     const raw = await esperPage.rawInfo();
-    const attribute = raw.match(/attribute=\{\{Icon\|([a-zA-Z]+)\}/)[1];
-    // Get some extra data
+
+    const { attribute, affiliation, role, rarity } = getFromRaw(raw);
     const { age, height, preference, identity } = pageInfo.general;
-
-    const affiliation = pageInfo.general.affiliation || raw.match(/affiliation=\{\{Icon\|([a-z A-Z]+)\}\}/)[1];
-    const role = pageInfo.general.role || raw.match(/role=([a-zA-Z]+)/)[1];
-    // Skills
-    let skills = await esperPage.tables().then(r => r[0]);
-    try {
-      skills = skills.filter(s => s.name);
-      // Delete unneccesary data
-      skills.forEach(obj => {
-        delete obj.ability;
-        if (obj.description) obj.description = obj.description.toString();
-        // Remove html tags
-        Object.keys(obj).forEach(k => {
-          const v = obj[k];
-          obj[k] = v.replace(/(<([^>]+)>)/ig, '');
-        })
-        // Remove icons
-        obj.description = obj.description.split(",•Icon");
-        if (obj.description.length > 1) obj.description.pop();
-        obj.description = obj.description.toString();
-        // Rename description to value
-        obj.value = obj.description;
-        delete obj.description;
-        // Set captain ability to none if it doesn't exist
-      })
-    } catch (err) {
-      skills = undefined;
-    }
-
-    const unknownStats = {
-      hp: "Unknown",
-      atk: "Unknown",
-      def: "Unknown",
-      speed: "Unknown"
-    }
+    
+    const skills = await getSkills(esperPage);
 
     let esperInfo = {
-      name: search.results[0],
-      rarity: raw.match(/rarity=\{\{Icon\|([a-zA-Z]+)\}/)[1] || "Unknown",
+      name: esperFromResult,
+      rarity: rarity,
       role: role,
       attribute: {
         name: attribute,
@@ -122,12 +109,12 @@ module.exports = {
       artwork: await esperPage.mainImage(),
       icon: esperObj.icon,
       url: esperPage.url(),
-      age: age ? age : "Unknown",
-      height: height ? height : "Unknown",
+      age: age,
+      height: height,
       affiliation:  affiliation,
-      identity: identity ? identity : "Unknown",
-      preference: preference ? preference : "Unknown",
-      stats: esperObj.stats ? esperObj.stats : unknownStats,
+      identity: identity,
+      preference: preference,
+      stats: esperObj.stats,
       skills: skills,
       relics: {
         una: "Unknown",
@@ -138,33 +125,90 @@ module.exports = {
         una4: "Unknown",
         mui2: "Unknown",
       },
-      credits: [
-        "https://gachax.com/dislyte/characters/",
-        "https://dislyte.fandom.com/wiki/Espers",
-        "https://docs.google.com/spreadsheets/u/1/d/15hc3Nx6TDS7BNAIXid0gNO1j7gcVeydNoLwyY4POtzc/htmlview#"
-      ]
+      credits: credits,
     }
+
+    getRelics(esperInfo);
+
+    replaceUndefinedFields(esperInfo);
+
+    esperCache.set(esperFromResult, esperInfo);
+    return esperInfo;
+  }
+}
+
+function getFromRaw(raw) {
+  return {
+    attribute: raw.match(/attribute=\{\{Icon\|([a-zA-Z]+)\}/)[1],
+    affiliation: pageInfo.general.affiliation || raw.match(/affiliation=\{\{Icon\|([a-z A-Z]+)\}\}/)[1],
+    role: pageInfo.general.role || raw.match(/role=([a-zA-Z]+)/)[1],
+    rarity: raw.match(/rarity=\{\{Icon\|([a-zA-Z]+)\}/)[1],
+  }
+}
+
+async function getSkills(esperPage) {
+  let skills = await esperPage.tables().then(r => r[0]);
+  try {
+    skills = skills.filter(s => s.name);
+
+    skills.forEach(obj => {
+      delete obj.ability;
+      if (obj.description) obj.description = obj.description.toString();
+
+      removeHtmlTags(obj);
+
+      obj.description = obj.description.split(",•Icon");
+      if (obj.description.length > 1) obj.description.pop();
+      obj.description = obj.description.toString();
+      
+      obj.value = obj.description;
+      delete obj.description;
+      
+    })
+  } catch (err) {
+    skills = undefined;
+  }
+
+  return skills
+}
+
+function removeHtmlTags(obj) {
+  const keys = Object.keys(obj);
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    const value = obj[key];
+
+    obj[key] = value.replace(/(<([^>]+)>)/ig, '');
+  }
+}
+
+function getRelics(esperInfo) {
     // Position for the information
     // Position for the information
     const colIndex = {
-        name: 2,
-        una: 5,
-        mui: 6,
-    }
-      const i = esperIndex[esperName]
-      // Get the recommended relics
-      if (i) {
-      Object.keys(esperInfo.relics).forEach(k => {
-        esperInfo.relics[k] = sheet.getCell(i, colIndex[k]).value.replaceAll("\n", "/");
-      })
-      // Get each recommended main stat
-      Object.keys(esperInfo.main_stats).forEach((k, index) => {
-        const pos = colIndex.mui + index + 1;
-        esperInfo.main_stats[k] = sheet.getCell(i, pos).value.replaceAll("\n", "/");
-      })
-    }
-    // Add the info to cache
-    esperCache.set(search.results[0], esperInfo);
-    return esperInfo;
+      name: 2,
+      una: 5,
+      mui: 6,
+  }
+  const i = esperIndex[esperName]
+  if (i) {
+  Object.keys(esperInfo.relics).forEach(k => {
+    esperInfo.relics[k] = sheet.getCell(i, colIndex[k]).value.replaceAll("\n", "/");
+  })
+    
+  Object.keys(esperInfo.main_stats).forEach((k, index) => {
+    const pos = colIndex.mui + index + 1;
+      esperInfo.main_stats[k] = sheet.getCell(i, pos).value.replaceAll("\n", "/");
+    })
+  }
+}
+
+function replaceUndefinedFields(obj) {
+  const keys = Object.keys(obj);
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    const value = obj[key];
+
+    if (!value) obj[key] = 'Unknown';
   }
 }
